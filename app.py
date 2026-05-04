@@ -66,32 +66,27 @@ def compress_pdf_ghostscript(pdf_bytes):
             "gs",
             "-sDEVICE=pdfwrite",
             "-dCompatibilityLevel=1.4",
-
-            # ⚠️ compression agressive
             "-dPDFSETTINGS=/screen",
-
             "-dNOPAUSE",
             "-dQUIET",
             "-dBATCH",
 
-            # 🔥 image très basse qualité
+            # compression ultra violente
             "-dDownsampleColorImages=true",
-            "-dColorImageResolution=50",
-
+            "-dColorImageResolution=25",
             "-dDownsampleGrayImages=true",
-            "-dGrayImageResolution=50",
-
+            "-dGrayImageResolution=25",
             "-dDownsampleMonoImages=true",
-            "-dMonoImageResolution=100",
+            "-dMonoImageResolution=60",
 
-            # 🔥 compression jpeg
             "-dAutoFilterColorImages=false",
             "-dAutoFilterGrayImages=false",
             "-dColorImageFilter=/DCTEncode",
             "-dGrayImageFilter=/DCTEncode",
-            "-dJPEGQ=30",
 
-            # optimisation
+            # qualité JPEG très basse
+            "-dJPEGQ=10",
+
             "-dDetectDuplicateImages=true",
             "-dCompressFonts=true",
             "-dSubsetFonts=true",
@@ -104,13 +99,19 @@ def compress_pdf_ghostscript(pdf_bytes):
             cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            text=True
+            text=True,
         )
 
         if result.returncode != 0:
             raise RuntimeError(result.stderr)
 
-        return output_path.read_bytes()
+        compressed = output_path.read_bytes()
+
+        # sécurité : si Ghostscript donne un fichier plus gros, garder l'original fusionné
+        if len(compressed) >= len(pdf_bytes):
+            return pdf_bytes
+
+        return compressed
 
 
 # =========================
