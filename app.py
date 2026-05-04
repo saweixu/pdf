@@ -1,9 +1,11 @@
 import io
+import os
+import subprocess
+import tempfile
 from pathlib import Path
 
 import streamlit as st
 from pypdf import PdfReader, PdfWriter
-import pikepdf
 
 
 st.set_page_config(
@@ -19,65 +21,72 @@ st.sidebar.markdown("### Athina Logistics")
 st.sidebar.caption("PDF Tool")
 
 st.title("Merge & Compress PDF")
-st.caption("Upload multiple PDF files, merge them, then download a compressed PDF.")
+st.caption("Upload plusieurs PDF. L'app fusionne puis compresse fortement le fichier final.")
 
 
-uploaded_files = st.file_uploader(
-    "Upload PDF files",
-    type=["pdf"],
-    accept_multiple_files=True
-)
-
-compression_level = st.selectbox(
-    "Compression level",
-    [
-        "Normal",
-        "Strong",
-    ],
-    index=0
-)
-
-
-def merge_pdfs(files):
+def merge_pdfs(uploaded_files):
     writer = PdfWriter()
 
-    for uploaded_file in files:
+    for uploaded_file in uploaded_files:
         reader = PdfReader(uploaded_file)
         for page in reader.pages:
             writer.add_page(page)
 
-    merged_bytes = io.BytesIO()
-    writer.write(merged_bytes)
-    merged_bytes.seek(0)
-    return merged_bytes.getvalue()
+    output = io.BytesIO()
+    writer.write(output)
+    output.seek(0)
+    return output.getvalue()
 
 
-def compress_pdf(pdf_bytes, strong=False):
-    input_pdf = io.BytesIO(pdf_bytes)
-    output_pdf = io.BytesIO()
+def compress_pdf_strong(pdf_bytes):
+    with tempfile.TemporaryDirectory() as tmpdir:
+        input_path = os.path.join(tmpdir, "input.pdf")
+        output_path = os.path.join(tmpdir, "output.pdf")
 
-    with pikepdf.open(input_pdf) as pdf:
-        pdf.remove_unreferenced_resources()
+        with open(input_path, "wb") as f:
+            f.write(pdf_bytes)
 
-        save_kwargs = {
-            "linearize": True,
-            "compress_streams": True,
-            "recompress_flate": True,
-            "object_stream_mode": pikepdf.ObjectStreamMode.generate,
-        }
+        cmd = [
+            "gs",
+            "-sDEVICE=pdfwrite",
+            "-dCompatibilityLevel=1.4",
+            "-dPDFSETTINGS=/screen",
+            "-dNOPAUSE",
+            "-dQUIET",
+            "-dBATCH",
+            "-dDetectDuplicateImages=true",
+            "-dCompressFonts=true",
+            "-dSubsetFonts=true",
+            "-dColorImageDownsampleType=/Bicubic",
+            "-dColorImageResolution=100",
+            "-dGrayImageDownsampleType=/Bicubic",
+            "-dGrayImageResolution=100",
+            "-dMonoImageDownsampleType=/Subsample",
+            "-dMonoImageResolution=150",
+            f"-sOutputFile={output_path}",
+            input_path,
+        ]
 
-        if strong:
-            save_kwargs["deterministic_id"] = True
+        subprocess.run(cmd, check=True)
 
-        pdf.save(output_pdf, **save_kwargs)
-
-    output_pdf.seek(0)
-    return output_pdf.getvalue()
+        with open(output_path, "rb") as f:
+            return f.read()
 
 
 def size_mb(data):
     return len(data) / 1024 / 1024
 
+
+uploaded_files = st.file_uploader(
+    "Upload PDF files",
+    type=["pdf"],
+    accept_multiple_files=True,
+)
+
+output_name = st.text_input("Output filename", value="merged_compressed.pdf")
+
+if not output_name.lower().endswith(".pdf"):
+    output_name += ".pdf"
 
 if uploaded_files:
     st.subheader("Uploaded files")
@@ -85,39 +94,29 @@ if uploaded_files:
     for i, f in enumerate(uploaded_files, start=1):
         st.write(f"{i}. {f.name} - {f.size / 1024 / 1024:.2f} MB")
 
-    output_name = st.text_input(
-        "Output filename",
-        value="merged_compressed.pdf"
-    )
-
-    if not output_name.lower().endswith(".pdf"):
-        output_name += ".pdf"
-
-    if st.button("Merge and compress PDF", type="primary"):
+    if st.button("Merge and compress", type="primary"):
         try:
-            with st.spinner("Merging PDFs..."):
-                merged = merge_pdfs(uploaded_files)
-
-            with st.spinner("Compressing PDF..."):
-                compressed = compress_pdf(
-                    merged,
-                    strong=(compression_level == "Strong")
-                )
+            merged = merge_pdfs(uploaded_files)
+            compressed = compress_pdf_strong(merged)
 
             st.success("PDF created successfully.")
 
-            c1, c2 = st.columns(2)
-            c1.metric("Merged size", f"{size_mb(merged):.2f} MB")
-            c2.metric("Compressed size", f"{size_mb(compressed):.2f} MB")
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Uploaded files", len(uploaded_files))
+            c2.metric("Before compression", f"{size_mb(merged):.2f} MB")
+            c3.metric("After compression", f"{size_mb(compressed):.2f} MB")
 
             st.download_button(
                 label="Download compressed PDF",
                 data=compressed,
                 file_name=output_name,
-                mime="application/pdf"
+                mime="application/pdf",
             )
+
+        except FileNotFoundError:
+            st.error("Ghostscript is not installed. Vérifie que packages.txt contient bien: ghostscript")
 
         except Exception as e:
             st.error(f"Error: {e}")
 else:
-    st.info("Upload at least 2 PDF files.")
+    st.info("Upload at least one PDF.")
