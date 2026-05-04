@@ -21,7 +21,16 @@ st.sidebar.markdown("### Athina Logistics")
 st.sidebar.caption("PDF Tool")
 
 st.title("Merge & Compress PDF")
-st.caption("Upload plusieurs PDF. L'app fusionne puis compresse fortement le fichier final.")
+st.caption("Upload PDF files. The app merges them and compresses strongly.")
+
+
+def get_prefix(filename):
+    stem = Path(filename).stem
+    return stem.split("-")[0].strip() if "-" in stem else stem.strip()
+
+
+def size_mb(data):
+    return len(data) / 1024 / 1024
 
 
 def merge_pdfs(uploaded_files):
@@ -38,13 +47,12 @@ def merge_pdfs(uploaded_files):
     return output.getvalue()
 
 
-def compress_pdf_strong(pdf_bytes):
+def compress_pdf_ghostscript(pdf_bytes):
     with tempfile.TemporaryDirectory() as tmpdir:
-        input_path = os.path.join(tmpdir, "input.pdf")
-        output_path = os.path.join(tmpdir, "output.pdf")
+        input_path = Path(tmpdir) / "input.pdf"
+        output_path = Path(tmpdir) / "output.pdf"
 
-        with open(input_path, "wb") as f:
-            f.write(pdf_bytes)
+        input_path.write_bytes(pdf_bytes)
 
         cmd = [
             "gs",
@@ -57,36 +65,35 @@ def compress_pdf_strong(pdf_bytes):
             "-dDetectDuplicateImages=true",
             "-dCompressFonts=true",
             "-dSubsetFonts=true",
-            "-dColorImageDownsampleType=/Bicubic",
-            "-dColorImageResolution=100",
-            "-dGrayImageDownsampleType=/Bicubic",
-            "-dGrayImageResolution=100",
-            "-dMonoImageDownsampleType=/Subsample",
+            "-dDownsampleColorImages=true",
+            "-dColorImageResolution=72",
+            "-dDownsampleGrayImages=true",
+            "-dGrayImageResolution=72",
+            "-dDownsampleMonoImages=true",
             "-dMonoImageResolution=150",
             f"-sOutputFile={output_path}",
-            input_path,
+            str(input_path),
         ]
 
-        subprocess.run(cmd, check=True)
+        result = subprocess.run(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=False
+        )
 
-        with open(output_path, "rb") as f:
-            return f.read()
+        if result.returncode != 0:
+            raise RuntimeError(result.stderr or "Ghostscript compression failed")
 
-
-def size_mb(data):
-    return len(data) / 1024 / 1024
+        return output_path.read_bytes()
 
 
 uploaded_files = st.file_uploader(
     "Upload PDF files",
     type=["pdf"],
-    accept_multiple_files=True,
+    accept_multiple_files=True
 )
-
-output_name = st.text_input("Output filename", value="merged_compressed.pdf")
-
-if not output_name.lower().endswith(".pdf"):
-    output_name += ".pdf"
 
 if uploaded_files:
     st.subheader("Uploaded files")
@@ -94,29 +101,31 @@ if uploaded_files:
     for i, f in enumerate(uploaded_files, start=1):
         st.write(f"{i}. {f.name} - {f.size / 1024 / 1024:.2f} MB")
 
-    if st.button("Merge and compress", type="primary"):
+    prefix = get_prefix(uploaded_files[0].name)
+    output_name = f"{prefix}_merged_compressed.pdf"
+
+    st.info(f"Output filename: {output_name}")
+
+    if st.button("Merge and compress PDF", type="primary"):
         try:
-            merged = merge_pdfs(uploaded_files)
-            compressed = compress_pdf_strong(merged)
+            merged_bytes = merge_pdfs(uploaded_files)
+            compressed_bytes = compress_pdf_ghostscript(merged_bytes)
 
             st.success("PDF created successfully.")
 
-            c1, c2, c3 = st.columns(3)
-            c1.metric("Uploaded files", len(uploaded_files))
-            c2.metric("Before compression", f"{size_mb(merged):.2f} MB")
-            c3.metric("After compression", f"{size_mb(compressed):.2f} MB")
+            c1, c2 = st.columns(2)
+            c1.metric("Merged size", f"{size_mb(merged_bytes):.2f} MB")
+            c2.metric("Compressed size", f"{size_mb(compressed_bytes):.2f} MB")
 
             st.download_button(
                 label="Download compressed PDF",
-                data=compressed,
+                data=compressed_bytes,
                 file_name=output_name,
-                mime="application/pdf",
+                mime="application/pdf"
             )
-
-        except FileNotFoundError:
-            st.error("Ghostscript is not installed. Vérifie que packages.txt contient bien: ghostscript")
 
         except Exception as e:
             st.error(f"Error: {e}")
+
 else:
-    st.info("Upload at least one PDF.")
+    st.info("Upload at least one PDF file.")
