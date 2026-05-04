@@ -1,5 +1,4 @@
 import io
-import os
 import subprocess
 import tempfile
 from pathlib import Path
@@ -8,8 +7,11 @@ import streamlit as st
 from pypdf import PdfReader, PdfWriter
 
 
+# =========================
+# CONFIG
+# =========================
 st.set_page_config(
-    page_title="PDF Merge & Compress",
+    page_title="PDF Merge & Ultra Compress",
     page_icon="logo.png",
     layout="wide"
 )
@@ -20,10 +22,13 @@ if Path("logo.png").exists():
 st.sidebar.markdown("### Athina Logistics")
 st.sidebar.caption("PDF Tool")
 
-st.title("Merge & Compress PDF")
-st.caption("Upload PDF files. The app merges them and compresses strongly.")
+st.title("Merge & Ultra Compress PDF")
+st.caption("Upload PDF files → merge → ultra compress (very small size).")
 
 
+# =========================
+# HELPERS
+# =========================
 def get_prefix(filename):
     stem = Path(filename).stem
     return stem.split("-")[0].strip() if "-" in stem else stem.strip()
@@ -47,6 +52,9 @@ def merge_pdfs(uploaded_files):
     return output.getvalue()
 
 
+# =========================
+# 🔥 ULTRA COMPRESSION
+# =========================
 def compress_pdf_ghostscript(pdf_bytes):
     with tempfile.TemporaryDirectory() as tmpdir:
         input_path = Path(tmpdir) / "input.pdf"
@@ -58,19 +66,36 @@ def compress_pdf_ghostscript(pdf_bytes):
             "gs",
             "-sDEVICE=pdfwrite",
             "-dCompatibilityLevel=1.4",
+
+            # ⚠️ compression agressive
             "-dPDFSETTINGS=/screen",
+
             "-dNOPAUSE",
             "-dQUIET",
             "-dBATCH",
+
+            # 🔥 image très basse qualité
+            "-dDownsampleColorImages=true",
+            "-dColorImageResolution=50",
+
+            "-dDownsampleGrayImages=true",
+            "-dGrayImageResolution=50",
+
+            "-dDownsampleMonoImages=true",
+            "-dMonoImageResolution=100",
+
+            # 🔥 compression jpeg
+            "-dAutoFilterColorImages=false",
+            "-dAutoFilterGrayImages=false",
+            "-dColorImageFilter=/DCTEncode",
+            "-dGrayImageFilter=/DCTEncode",
+            "-dJPEGQ=30",
+
+            # optimisation
             "-dDetectDuplicateImages=true",
             "-dCompressFonts=true",
             "-dSubsetFonts=true",
-            "-dDownsampleColorImages=true",
-            "-dColorImageResolution=72",
-            "-dDownsampleGrayImages=true",
-            "-dGrayImageResolution=72",
-            "-dDownsampleMonoImages=true",
-            "-dMonoImageResolution=150",
+
             f"-sOutputFile={output_path}",
             str(input_path),
         ]
@@ -79,16 +104,18 @@ def compress_pdf_ghostscript(pdf_bytes):
             cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            text=True,
-            check=False
+            text=True
         )
 
         if result.returncode != 0:
-            raise RuntimeError(result.stderr or "Ghostscript compression failed")
+            raise RuntimeError(result.stderr)
 
         return output_path.read_bytes()
 
 
+# =========================
+# UI
+# =========================
 uploaded_files = st.file_uploader(
     "Upload PDF files",
     type=["pdf"],
@@ -96,6 +123,7 @@ uploaded_files = st.file_uploader(
 )
 
 if uploaded_files:
+
     st.subheader("Uploaded files")
 
     for i, f in enumerate(uploaded_files, start=1):
@@ -106,10 +134,14 @@ if uploaded_files:
 
     st.info(f"Output filename: {output_name}")
 
-    if st.button("Merge and compress PDF", type="primary"):
+    if st.button("Merge & Ultra Compress", type="primary"):
+
         try:
-            merged_bytes = merge_pdfs(uploaded_files)
-            compressed_bytes = compress_pdf_ghostscript(merged_bytes)
+            with st.spinner("Merging PDFs..."):
+                merged_bytes = merge_pdfs(uploaded_files)
+
+            with st.spinner("Ultra compressing..."):
+                compressed_bytes = compress_pdf_ghostscript(merged_bytes)
 
             st.success("PDF created successfully.")
 
@@ -128,4 +160,4 @@ if uploaded_files:
             st.error(f"Error: {e}")
 
 else:
-    st.info("Upload at least one PDF file.")
+    st.info("Upload PDF files to start.")
