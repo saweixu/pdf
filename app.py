@@ -1,17 +1,14 @@
 import io
-import subprocess
-import tempfile
 from pathlib import Path
 
+import fitz  # PyMuPDF
 import streamlit as st
 from pypdf import PdfReader, PdfWriter
+from PIL import Image
 
 
-# =========================
-# CONFIG
-# =========================
 st.set_page_config(
-    page_title="PDF Merge & Ultra Compress",
+    page_title="PDF Merge & Extreme Compress",
     page_icon="logo.png",
     layout="wide"
 )
@@ -22,13 +19,10 @@ if Path("logo.png").exists():
 st.sidebar.markdown("### Athina Logistics")
 st.sidebar.caption("PDF Tool")
 
-st.title("Merge & Ultra Compress PDF")
-st.caption("Upload PDF files → merge → ultra compress (very small size).")
+st.title("Merge & Extreme Compress PDF")
+st.caption("Upload PDF files → merge → convert pages to low-quality images → small PDF.")
 
 
-# =========================
-# HELPERS
-# =========================
 def get_prefix(filename):
     stem = Path(filename).stem
     return stem.split("-")[0].strip() if "-" in stem else stem.strip()
@@ -52,70 +46,42 @@ def merge_pdfs(uploaded_files):
     return output.getvalue()
 
 
-# =========================
-# 🔥 ULTRA COMPRESSION
-# =========================
-def compress_pdf_ghostscript(pdf_bytes):
-    with tempfile.TemporaryDirectory() as tmpdir:
-        input_path = Path(tmpdir) / "input.pdf"
-        output_path = Path(tmpdir) / "output.pdf"
+def extreme_compress_by_rasterizing(pdf_bytes, zoom=0.55, jpeg_quality=18):
+    src = fitz.open(stream=pdf_bytes, filetype="pdf")
+    out = fitz.open()
 
-        input_path.write_bytes(pdf_bytes)
+    for page in src:
+        mat = fitz.Matrix(zoom, zoom)
+        pix = page.get_pixmap(matrix=mat, alpha=False)
 
-        cmd = [
-            "gs",
-            "-sDEVICE=pdfwrite",
-            "-dCompatibilityLevel=1.4",
-            "-dNOPAUSE",
-            "-dQUIET",
-            "-dBATCH",
+        img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
 
-            # 🚨 compression MAXIMUM
-            "-dPDFSETTINGS=/screen",
+        img_buffer = io.BytesIO()
+        img.save(
+            img_buffer,
+            format="JPEG",
+            quality=jpeg_quality,
+            optimize=True
+        )
+        img_buffer.seek(0)
 
-            # 💀 images détruites
-            "-dDownsampleColorImages=true",
-            "-dColorImageResolution=10",
+        rect = page.rect
+        new_page = out.new_page(width=rect.width, height=rect.height)
 
-            "-dDownsampleGrayImages=true",
-            "-dGrayImageResolution=10",
+        new_page.insert_image(
+            rect,
+            stream=img_buffer.getvalue()
+        )
 
-            "-dDownsampleMonoImages=true",
-            "-dMonoImageResolution=30",
+    output = io.BytesIO()
+    out.save(output, garbage=4, deflate=True, clean=True)
+    out.close()
+    src.close()
 
-            # 💀 JPEG ultra compressé
-            "-dAutoFilterColorImages=false",
-            "-dAutoFilterGrayImages=false",
-            "-dColorImageFilter=/DCTEncode",
-            "-dGrayImageFilter=/DCTEncode",
-            "-dJPEGQ=1",
-
-            # 💀 enlever trucs inutiles
-            "-dDetectDuplicateImages=true",
-            "-dCompressFonts=true",
-            "-dSubsetFonts=true",
-            "-dDiscardComments=true",
-
-            f"-sOutputFile={output_path}",
-            str(input_path),
-        ]
-
-        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-
-        if result.returncode != 0:
-            raise RuntimeError(result.stderr)
-
-        compressed = output_path.read_bytes()
-
-        if len(compressed) >= len(pdf_bytes):
-            return pdf_bytes
-
-        return compressed
+    output.seek(0)
+    return output.getvalue()
 
 
-# =========================
-# UI
-# =========================
 uploaded_files = st.file_uploader(
     "Upload PDF files",
     type=["pdf"],
@@ -123,7 +89,6 @@ uploaded_files = st.file_uploader(
 )
 
 if uploaded_files:
-
     st.subheader("Uploaded files")
 
     for i, f in enumerate(uploaded_files, start=1):
@@ -134,14 +99,17 @@ if uploaded_files:
 
     st.info(f"Output filename: {output_name}")
 
-    if st.button("Merge & Ultra Compress", type="primary"):
-
+    if st.button("Merge & Extreme Compress", type="primary"):
         try:
             with st.spinner("Merging PDFs..."):
                 merged_bytes = merge_pdfs(uploaded_files)
 
-            with st.spinner("Ultra compressing..."):
-                compressed_bytes = compress_pdf_ghostscript(merged_bytes)
+            with st.spinner("Extreme compressing..."):
+                compressed_bytes = extreme_compress_by_rasterizing(
+                    merged_bytes,
+                    zoom=0.55,
+                    jpeg_quality=18
+                )
 
             st.success("PDF created successfully.")
 
