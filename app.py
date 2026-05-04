@@ -73,11 +73,11 @@ def compress_pdf_ghostscript(pdf_bytes):
 
             # compression ultra violente
             "-dDownsampleColorImages=true",
-            "-dColorImageResolution=25",
+            "-dColorImageResolution=15",
             "-dDownsampleGrayImages=true",
-            "-dGrayImageResolution=25",
+            "-dGrayImageResolution=15",
             "-dDownsampleMonoImages=true",
-            "-dMonoImageResolution=60",
+            "-dMonoImageResolution=40",
 
             "-dAutoFilterColorImages=false",
             "-dAutoFilterGrayImages=false",
@@ -85,7 +85,7 @@ def compress_pdf_ghostscript(pdf_bytes):
             "-dGrayImageFilter=/DCTEncode",
 
             # qualité JPEG très basse
-            "-dJPEGQ=10",
+            "-dJPEGQ=5",
 
             "-dDetectDuplicateImages=true",
             "-dCompressFonts=true",
