@@ -107,8 +107,8 @@ if uploaded_files:
             with st.spinner("Extreme compressing..."):
                 compressed_bytes = extreme_compress_by_rasterizing(
                     merged_bytes,
-                    zoom=0.55,
-                    jpeg_quality=18
+                    zoom=0.75,
+                    jpeg_quality=35
                 )
 
             st.success("PDF created successfully.")
