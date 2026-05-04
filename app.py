@@ -66,48 +66,47 @@ def compress_pdf_ghostscript(pdf_bytes):
             "gs",
             "-sDEVICE=pdfwrite",
             "-dCompatibilityLevel=1.4",
-            "-dPDFSETTINGS=/screen",
             "-dNOPAUSE",
             "-dQUIET",
             "-dBATCH",
 
-            # compression ultra violente
-            "-dDownsampleColorImages=true",
-            "-dColorImageResolution=15",
-            "-dDownsampleGrayImages=true",
-            "-dGrayImageResolution=15",
-            "-dDownsampleMonoImages=true",
-            "-dMonoImageResolution=40",
+            # 🚨 compression MAXIMUM
+            "-dPDFSETTINGS=/screen",
 
+            # 💀 images détruites
+            "-dDownsampleColorImages=true",
+            "-dColorImageResolution=10",
+
+            "-dDownsampleGrayImages=true",
+            "-dGrayImageResolution=10",
+
+            "-dDownsampleMonoImages=true",
+            "-dMonoImageResolution=30",
+
+            # 💀 JPEG ultra compressé
             "-dAutoFilterColorImages=false",
             "-dAutoFilterGrayImages=false",
             "-dColorImageFilter=/DCTEncode",
             "-dGrayImageFilter=/DCTEncode",
+            "-dJPEGQ=1",
 
-            # qualité JPEG très basse
-            "-dJPEGQ=5",
-
+            # 💀 enlever trucs inutiles
             "-dDetectDuplicateImages=true",
             "-dCompressFonts=true",
             "-dSubsetFonts=true",
+            "-dDiscardComments=true",
 
             f"-sOutputFile={output_path}",
             str(input_path),
         ]
 
-        result = subprocess.run(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
+        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
 
         if result.returncode != 0:
             raise RuntimeError(result.stderr)
 
         compressed = output_path.read_bytes()
 
-        # sécurité : si Ghostscript donne un fichier plus gros, garder l'original fusionné
         if len(compressed) >= len(pdf_bytes):
             return pdf_bytes
 
