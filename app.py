@@ -17,7 +17,7 @@ if Path("logo.png").exists():
     st.sidebar.image("logo.png", width=200)
 
 st.sidebar.markdown("### Athina Logistics")
-st.sidebar.caption("PDF Tool")
+st.sidebar.caption("Gloal Access")
 
 st.title("Merge & Extreme Compress PDF")
 st.caption("Upload PDF files → merge → convert pages to low-quality images → small PDF.")
@@ -46,7 +46,7 @@ def merge_pdfs(uploaded_files):
     return output.getvalue()
 
 
-def extreme_compress_by_rasterizing(pdf_bytes, zoom=0.75, jpeg_quality=50):
+def extreme_compress_by_rasterizing(pdf_bytes, zoom=1, jpeg_quality=75):
     src = fitz.open(stream=pdf_bytes, filetype="pdf")
     out = fitz.open()
 
@@ -107,8 +107,8 @@ if uploaded_files:
             with st.spinner("Extreme compressing..."):
                 compressed_bytes = extreme_compress_by_rasterizing(
                     merged_bytes,
-                    zoom=0.75,
-                    jpeg_quality=50
+                    zoom=1,
+                    jpeg_quality=75
                 )
 
             st.success("PDF created successfully.")
