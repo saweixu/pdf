@@ -46,7 +46,7 @@ def merge_pdfs(uploaded_files):
     return output.getvalue()
 
 
-def extreme_compress_by_rasterizing(pdf_bytes, zoom=0.55, jpeg_quality=18):
+def extreme_compress_by_rasterizing(pdf_bytes, zoom=0.65, jpeg_quality=25):
     src = fitz.open(stream=pdf_bytes, filetype="pdf")
     out = fitz.open()
 
