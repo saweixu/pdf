@@ -21,11 +21,6 @@ def mb(n: int) -> float:
 
 
 def detect_prefix(filename: str) -> str:
-    """
-    Output name rule:
-    take everything before '-' from the first uploaded PDF.
-    If no '-', use filename stem.
-    """
     stem = Path(filename).stem.strip()
     if "-" in stem:
         prefix = stem.split("-")[0].strip()
@@ -33,6 +28,25 @@ def detect_prefix(filename: str) -> str:
         prefix = stem[:30].strip()
     prefix = re.sub(r'[\\/:*?"<>|]+', "_", prefix)
     return prefix or "PDF"
+
+
+def safe_pdf_bytes(doc: fitz.Document) -> bytes:
+    """
+    Safe PDF writer for Streamlit Cloud.
+    Avoid linear=True because some PDFs trigger pymupdf.mupdf.FzErrorArgument.
+    """
+    try:
+        return doc.tobytes(
+            garbage=4,
+            deflate=True,
+            clean=True,
+        )
+    except Exception:
+        # Fallback safer, less aggressive
+        return doc.tobytes(
+            garbage=3,
+            deflate=True,
+        )
 
 
 def save_uploaded_files(uploaded_files, folder: Path) -> List[Path]:
@@ -58,12 +72,7 @@ def merge_pdfs(pdf_paths: List[Path]) -> Tuple[bytes, int]:
     for p in pdf_paths:
         total_pages += add_pdf_to_doc(out, p)
 
-    data = out.tobytes(
-        garbage=4,
-        deflate=True,
-        clean=True,
-        linear=True,
-    )
+    data = safe_pdf_bytes(out)
     out.close()
     return data, total_pages
 
@@ -74,13 +83,6 @@ def render_compress_pdf(
     jpeg_quality: int,
     grayscale: bool = True,
 ) -> bytes:
-    """
-    Strong compression:
-    render each page as JPEG image, then rebuild one PDF.
-
-    Warning:
-    text becomes image, not searchable/copyable.
-    """
     src = fitz.open(stream=pdf_bytes, filetype="pdf")
     out = fitz.open()
 
@@ -110,12 +112,7 @@ def render_compress_pdf(
         new_page = out.new_page(width=page.rect.width, height=page.rect.height)
         new_page.insert_image(rect, stream=jpg_bytes)
 
-    final = out.tobytes(
-        garbage=4,
-        deflate=True,
-        clean=True,
-        linear=True,
-    )
+    final = safe_pdf_bytes(out)
 
     src.close()
     out.close()
@@ -130,7 +127,6 @@ def compress_until_target(
 ) -> Tuple[bytes, str]:
     target_bytes = int(target_mb * 1024 * 1024)
 
-    # First try normal PDF optimization without rasterizing
     best = merged_bytes
     best_tag = "Normal optimization"
 
@@ -151,7 +147,7 @@ def compress_until_target(
             (72, 18),
             (60, 15),
         ]
-    else:  # Extreme
+    else:
         ladder = [
             (85, 20),
             (72, 15),
@@ -213,40 +209,45 @@ if uploaded_files:
     st.write(f"**Output name:** `{prefix}-PDF compressed version.pdf`")
 
     if st.button("Compress PDF", type="primary"):
-        with tempfile.TemporaryDirectory() as td:
-            tmp = Path(td)
-            pdf_paths = save_uploaded_files(uploaded_files, tmp)
+        try:
+            with tempfile.TemporaryDirectory() as td:
+                tmp = Path(td)
+                pdf_paths = save_uploaded_files(uploaded_files, tmp)
 
-            with st.spinner("Merging PDF files..."):
-                merged_bytes, total_pages = merge_pdfs(pdf_paths)
+                with st.spinner("Merging PDF files..."):
+                    merged_bytes, total_pages = merge_pdfs(pdf_paths)
 
-            st.write(f"**Merged size:** {mb(len(merged_bytes)):.2f} MB")
-            st.write(f"**Total pages:** {total_pages}")
+                st.write(f"**Merged size:** {mb(len(merged_bytes)):.2f} MB")
+                st.write(f"**Total pages:** {total_pages}")
 
-            progress = st.progress(0, text="Starting compression...")
-            final_bytes, strategy = compress_until_target(
-                merged_bytes=merged_bytes,
-                target_mb=target_mb,
-                mode=mode,
-                progress=progress,
-            )
-            progress.empty()
+                progress = st.progress(0, text="Starting compression...")
+                final_bytes, strategy = compress_until_target(
+                    merged_bytes=merged_bytes,
+                    target_mb=target_mb,
+                    mode=mode,
+                    progress=progress,
+                )
+                progress.empty()
 
-            final_name = f"{prefix}-PDF compressed version.pdf"
-            saved = original_total - len(final_bytes)
-            emails_needed = max(1, math.ceil(len(final_bytes) / (10 * 1024 * 1024)))
+                final_name = f"{prefix}-PDF compressed version.pdf"
+                saved = original_total - len(final_bytes)
+                emails_needed = max(1, math.ceil(len(final_bytes) / (10 * 1024 * 1024)))
 
-            st.success("Compression finished")
-            st.write(f"**Final size:** {mb(len(final_bytes)):.2f} MB")
-            st.write(f"**Saved:** {mb(saved):.2f} MB")
-            st.write(f"**Strategy:** {strategy}")
-            st.write(f"**Estimated emails needed ≤10MB:** {emails_needed}")
+                st.success("Compression finished")
+                st.write(f"**Final size:** {mb(len(final_bytes)):.2f} MB")
+                st.write(f"**Saved:** {mb(saved):.2f} MB")
+                st.write(f"**Strategy:** {strategy}")
+                st.write(f"**Estimated emails needed ≤10MB:** {emails_needed}")
 
-            st.download_button(
-                label="Download compressed PDF",
-                data=final_bytes,
-                file_name=final_name,
-                mime="application/pdf",
-            )
+                st.download_button(
+                    label="Download compressed PDF",
+                    data=final_bytes,
+                    file_name=final_name,
+                    mime="application/pdf",
+                )
+
+        except Exception as e:
+            st.error(f"Erreur pendant la compression : {e}")
+            st.info("Essaie le mode Extreme, ou upload moins de PDF à la fois si le fichier est très lourd.")
 else:
     st.warning("Upload at least one PDF.")
